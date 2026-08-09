@@ -8,3 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Local agent session transcripts
+/.tribe/sessions/*
+!/.tribe/sessions/.gitkeep
