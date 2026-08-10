@@ -234,4 +234,3 @@ uv run tribe run "inspect the project and run its tests" --verbose
 ```
 
 Running against a live model needs credentials for the chosen provider (see [Model Providers](#model-providers)). The default provider is Anthropic and the default model is `claude-opus-4-8`; override them with `--provider` and `--model`.
-
