@@ -1,5 +1,17 @@
-# Tribe
+<div align="center">
 
+# 🪶 Tribe
+
+**A minimal, personal agent harness — own the loop.**
+
+An experiment in building an agent runtime from small, understandable parts: explicit agent loop, inspectable tool boundary, bounded context, durable sessions.
+
+![Python](https://img.shields.io/badge/Python-pure-yellow?logo=python&logoColor=white)
+![Inspiration](https://img.shields.io/badge/Inspired%20by-Pi%20(earendil)-blueviolet)
+
+</div>
+
+---
 Tribe is a minimal, personal agent harness inspired by [Pi](https://github.com/earendil-works/pi). It is an experiment in building an agent runtime from small, understandable parts instead of a large framework.
 
 The goal is not to ship another general-purpose assistant. The goal is to own the loop: decide which model to use, which tools it can call, what enters its context window, and how the session survives long-running work.
