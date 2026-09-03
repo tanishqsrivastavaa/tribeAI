@@ -12,3 +12,4 @@ wheels/
 # Local agent session transcripts
 /.tribe/sessions/*
 !/.tribe/sessions/.gitkeep
+CLAUDE.md
