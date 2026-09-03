@@ -44,6 +44,8 @@ def compact(model: Model, history: list[Message], keep_recent: int) -> Message |
     if len(history) <= keep_recent:
         return None
     older = history[:-keep_recent]
+    if all(m.role == Role.SUMMARY for m in older):
+        return None
     transcript = render_transcript(older)
     response = model.complete(
         SUMMARY_SYSTEM,
