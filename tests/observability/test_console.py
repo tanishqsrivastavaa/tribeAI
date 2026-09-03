@@ -1,6 +1,7 @@
 import io
 
 from tribe.agent.limits import RunResult, RunStatus
+from tribe.approvals import ApprovalMode
 from tribe.observability import ConsoleObserver
 from tribe.tools import ToolResult
 
@@ -34,6 +35,19 @@ def test_tool_success_shown_in_verbose_mode():
     obs.tool_end("read", ToolResult.ok("data"), 0.05)
     assert "ok" in buf.getvalue()
     assert "ms" in buf.getvalue()
+
+
+def test_verbose_approval_prints_mode_value():
+    obs, buf = _observer(verbose=True)
+
+    class Decision:
+        allowed = True
+        tool = "write"
+        mode = ApprovalMode.ALLOW
+
+    obs.approval(Decision())
+    assert "allow" in buf.getvalue()
+    assert "ApprovalMode" not in buf.getvalue()
 
 
 def test_denied_approval_always_shown():

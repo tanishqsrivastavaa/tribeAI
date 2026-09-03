@@ -48,7 +48,8 @@ class ConsoleObserver(Observer):
         if not decision.allowed:
             self._emit(f"⛔ {decision.tool} denied: {decision.reason}")
         elif self.verbose:
-            self._emit(f"✓ {decision.tool} {decision.mode}")
+            mode = getattr(decision.mode, "value", decision.mode)
+            self._emit(f"✓ {decision.tool} {mode}")
 
     def tool_start(self, name: str, args: dict[str, Any]) -> None:
         self._emit(f"⚙ {name} {_short(args)}")
