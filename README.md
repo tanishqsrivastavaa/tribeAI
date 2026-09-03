@@ -155,4 +155,12 @@ The CLI will expose session identifiers, workspace and model selection, and a ve
 
 ## Status
 
-Tribe is at the scaffold stage. The current repository contains the Python entry point; the runtime, session persistence, context compaction, approval gate, CLI, observability, and tool implementations are the intended next layers.
+The harness is implemented end to end: the typed message model and append-only session store, the workspace boundary, the `read`/`grep`/`write`/`bash` tools, the approval gate, the model layer (Anthropic-backed, with an offline scripted model for tests), the context builder and compaction, the agent loop with execution limits, the console observer, and the `tribe` CLI (`run`, `chat`, `resume`). Every layer has tests.
+
+```bash
+uv sync                 # install dependencies
+uv run pytest           # run the test suite
+uv run tribe run "inspect the project and run its tests" --verbose
+```
+
+Running against a live model needs Anthropic credentials (`ANTHROPIC_API_KEY` or an `ant auth login` profile). The default model is `claude-opus-4-8`; override it with `--model`.
