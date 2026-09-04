@@ -62,9 +62,15 @@ def to_anthropic(messages: list[Message]) -> list[dict[str, Any]]:
 
 
 class AnthropicModel(Model):
-    def __init__(self, name: str, client: Any = None, max_tokens: int = 16000):
+    def __init__(
+        self,
+        name: str,
+        client: Any = None,
+        max_tokens: int = 16000,
+        context_limit: int | None = None,
+    ):
         self.name = name
-        self.context_limit = context_limit_for(name)
+        self.context_limit = context_limit or context_limit_for(name)
         self.max_tokens = max_tokens
         if client is None:
             import anthropic
