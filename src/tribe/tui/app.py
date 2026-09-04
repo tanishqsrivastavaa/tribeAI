@@ -9,7 +9,7 @@ from textual.widgets import Footer, Header, Input, RichLog, Static
 
 from ..agent import AgentLoop
 from ..agent.limits import Cancellation
-from ..models import PROVIDERS
+from ..models import DEFAULT_PROVIDER, PROVIDERS
 from ..observability import Observer
 from ..observability.console import _short
 from ..sessions import SessionStore
@@ -18,6 +18,7 @@ from . import messages as m
 from .approval import TuiApprover
 from .login import ApiKeyScreen, ModelSelectScreen, ProviderSelectScreen
 from .observer import TuiObserver
+from .screens import SessionsScreen
 
 LoopFactory = Callable[[Observer, object, Optional[str], Optional[str]], AgentLoop]
 
@@ -48,6 +49,7 @@ class TribeApp(App):
     #login-hint { color: $text-muted; padding-bottom: 1; }
     #login-error { color: $error; }
     #provider-list { height: auto; max-height: 15; }
+    #sessions-list { height: auto; max-height: 15; }
     """
 
     BINDINGS = [
@@ -83,7 +85,7 @@ class TribeApp(App):
         yield Header()
         yield RichLog(id="transcript", wrap=True, markup=True)
         yield Static("", id="status")
-        yield Input(placeholder="Message the agent…  (/login to choose a model)", id="prompt")
+        yield Input(placeholder="Message the agent…  (/help for commands)", id="prompt")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -125,6 +127,8 @@ class TribeApp(App):
             self._update_subtitle()
             return False
         self.model_name = self.loop.model.name
+        if self.provider is None:
+            self.provider = DEFAULT_PROVIDER
         self._update_subtitle()
         return True
 
@@ -158,8 +162,15 @@ class TribeApp(App):
         command = text[1:].split()[0].lower()
         if command == "login":
             self._start_login()
+        elif command == "model":
+            self._start_model_change()
+        elif command == "sessions":
+            self._start_sessions()
         elif command == "help":
-            self._transcript.write("[dim]commands: /login (choose provider & model), /help[/]")
+            self._transcript.write(
+                "[dim]commands: /login (provider + key + model), "
+                "/model (switch model), /sessions (open a past session), /help[/]"
+            )
         else:
             self._transcript.write(f"[yellow]unknown command: /{command}[/]")
 
@@ -194,6 +205,41 @@ class TribeApp(App):
                 f"[b green]✓ logged in[/]  provider [b]{provider}[/] · "
                 f"model [b]{self.model_name}[/]"
             )
+        self.query_one("#prompt", Input).focus()
+
+    def _start_model_change(self) -> None:
+        if not self.provider:
+            self._transcript.write("[yellow]No provider yet. Type [b]/login[/b] first.[/]")
+            return
+        self.push_screen(
+            ModelSelectScreen(self.provider, current=self.model_name),
+            self._on_model_only_chosen,
+        )
+
+    def _on_model_only_chosen(self, model: str | None) -> None:
+        if not model:
+            return
+        self.model = model
+        if self._build_loop():
+            self._transcript.write(f"[b green]✓ model set[/]  [b]{self.model_name}[/]")
+        self.query_one("#prompt", Input).focus()
+
+    def _start_sessions(self) -> None:
+        if not self.store.list_sessions():
+            self._transcript.write("[yellow]no saved sessions[/]")
+            return
+        self.push_screen(SessionsScreen(self.store, self.session_id), self._on_session_chosen)
+
+    def _on_session_chosen(self, session_id: str | None) -> None:
+        if not session_id or session_id == self.session_id:
+            return
+        self.session_id = session_id
+        self._transcript.clear()
+        try:
+            self.render_history(self.store.load(session_id))
+        except FileNotFoundError:
+            pass
+        self._update_subtitle()
         self.query_one("#prompt", Input).focus()
 
     def _start_turn(self, text: str) -> None:

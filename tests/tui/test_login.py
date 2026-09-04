@@ -76,6 +76,7 @@ async def test_apply_login_sets_provider_key_and_rebuilds(make_app, helpers):
 async def test_cancel_at_provider_menu_changes_nothing(make_app, helpers):
     app, _, _ = make_app([ModelResponse(text="x")])
     async with app.run_test() as pilot:
+        before = app.provider
         await _login_cmd(app, pilot)
         assert await helpers.wait_until(
             pilot, lambda: isinstance(app.screen, ProviderSelectScreen)
@@ -83,7 +84,7 @@ async def test_cancel_at_provider_menu_changes_nothing(make_app, helpers):
         await pilot.press("escape")
         await pilot.pause()
         assert not isinstance(app.screen, ProviderSelectScreen)
-    assert app.provider is None
+    assert app.provider == before
 
 
 async def test_help_and_unknown_command(make_app, helpers):

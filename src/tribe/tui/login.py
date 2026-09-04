@@ -80,23 +80,26 @@ class ModelSelectScreen(ModalScreen[str | None]):
 
     BINDINGS = [("escape", "cancel", "Cancel")]
 
-    def __init__(self, provider: str) -> None:
+    def __init__(self, provider: str, current: str | None = None) -> None:
         super().__init__()
         self.provider = provider
         self.default_model = PROVIDERS[provider].default_model
+        self.initial = current or self.default_model
 
     def compose(self) -> ComposeResult:
         with Vertical(id="login-box"):
             yield Static(f"Choose a model for {self.provider}", id="login-title")
             yield Static(f"Default: {self.default_model}", id="login-hint")
-            yield Input(value=self.default_model, id="model-input")
+            yield Input(value=self.initial, id="model-input")
 
     def on_mount(self) -> None:
-        self.query_one("#model-input", Input).focus()
+        model_input = self.query_one("#model-input", Input)
+        model_input.focus()
+        model_input.cursor_position = len(model_input.value)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         event.stop()
-        self.dismiss(event.value.strip() or self.default_model)
+        self.dismiss(event.value.strip() or self.initial)
 
     def action_cancel(self) -> None:
         self.dismiss(None)
