@@ -112,19 +112,22 @@ class TribeApp(App):
         self.sub_title = f"{self.session_id[:8]} · {state}".strip(" ·")
 
     def _build_loop(self, initial: bool = False) -> bool:
+        if not config.has_credentials(self.provider or DEFAULT_PROVIDER):
+            self.loop = None
+            if initial:
+                self._transcript.write(
+                    "[yellow]Not logged in. Type [b]/login[/b] to choose a "
+                    "provider and add an API key.[/]"
+                )
+            self._update_subtitle()
+            return False
         try:
             self.loop = self._loop_factory(
                 self._observer, self._approver, self.provider, self.model
             )
         except Exception as exc:  # noqa: BLE001
             self.loop = None
-            if initial:
-                self._transcript.write(
-                    "[yellow]No model configured. Type [b]/login[/b] to choose a "
-                    "provider and add an API key.[/]"
-                )
-            else:
-                self._transcript.write(f"[red]could not initialize model: {exc}[/]")
+            self._transcript.write(f"[red]could not initialize model: {exc}[/]")
             self._update_subtitle()
             return False
         self.model_name = self.loop.model.name
@@ -257,7 +260,10 @@ class TribeApp(App):
     @work(thread=True)
     def _run_turn(self, text: str) -> None:
         assert self.loop is not None
-        self.loop.run(self.session_id, text, self.cancellation)
+        try:
+            self.loop.run(self.session_id, text, self.cancellation)
+        except Exception as exc:  # noqa: BLE001
+            self.post_message(m.RunFailed(f"{type(exc).__name__}: {exc}"))
 
     def action_cancel(self) -> None:
         if self._turn_active and self.cancellation is not None:
@@ -297,4 +303,12 @@ class TribeApp(App):
             self._transcript.write(f"[b green]tribe[/]  {message.final_text}")
         if not message.completed:
             self._transcript.write(f"[yellow]■ stopped: {message.status}[/]")
+        self._finish_turn()
+
+    def on_run_failed(self, message: m.RunFailed) -> None:
+        self._transcript.write(f"[red]⚠ model error:[/] {message.error}")
+        self._transcript.write(
+            "[yellow]The request failed — type [b]/login[/b] to set or update your "
+            "API key, or [b]/model[/b] to pick another model.[/]"
+        )
         self._finish_turn()

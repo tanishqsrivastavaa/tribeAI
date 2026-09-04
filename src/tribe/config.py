@@ -51,6 +51,16 @@ def apply_stored_keys(config: dict[str, Any] | None = None) -> dict[str, Any]:
     return config
 
 
+def has_credentials(provider: str | None) -> bool:
+    """True when the provider's API key is present in the environment."""
+    from .models import PROVIDERS
+
+    spec = PROVIDERS.get(provider or "")
+    if spec is None or not spec.api_key_env:
+        return False
+    return bool(os.environ.get(spec.api_key_env))
+
+
 def resolve_startup(
     provider: str | None, model: str | None
 ) -> tuple[str | None, str | None]:

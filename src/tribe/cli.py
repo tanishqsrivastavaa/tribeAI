@@ -78,6 +78,19 @@ def build_loop(
     return loop, store
 
 
+def _safe_run(loop: AgentLoop, session_id: str, prompt: str):
+    try:
+        return loop.run(session_id, prompt)
+    except Exception as exc:  # noqa: BLE001
+        typer.echo(f"model error: {type(exc).__name__}: {exc}", err=True)
+        typer.echo(
+            "The request failed. Set your provider's API key, or run 'tribe chat' "
+            "and use /login.",
+            err=True,
+        )
+        return None
+
+
 def _report(result, session_id: str) -> None:
     if result.final_text:
         typer.echo(result.final_text)
@@ -97,7 +110,9 @@ def _interactive(loop: AgentLoop, session_id: str) -> None:
             break
         if not line.strip():
             continue
-        result = loop.run(session_id, line)
+        result = _safe_run(loop, session_id, line)
+        if result is None:
+            continue
         if result.final_text:
             typer.echo(result.final_text)
         if not result.completed:
@@ -121,7 +136,9 @@ def run(
         workspace, model, verbose, yes, provider=provider, context_limit=context_limit
     )
     session_id = store.create()
-    result = loop.run(session_id, prompt)
+    result = _safe_run(loop, session_id, prompt)
+    if result is None:
+        raise typer.Exit(code=1)
     _report(result, session_id)
 
 
@@ -189,7 +206,9 @@ def resume(
         typer.echo(f"unknown session: {session_id}", err=True)
         raise typer.Exit(code=1)
     if prompt:
-        result = loop.run(session_id, prompt)
+        result = _safe_run(loop, session_id, prompt)
+        if result is None:
+            raise typer.Exit(code=1)
         _report(result, session_id)
     else:
         _interactive(loop, session_id)

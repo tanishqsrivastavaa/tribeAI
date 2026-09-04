@@ -56,3 +56,9 @@ class RunEnded(Message):
         self.final_text = final_text
         self.rounds = rounds
         self.completed = completed
+
+
+class RunFailed(Message):
+    def __init__(self, error: str) -> None:
+        super().__init__()
+        self.error = error

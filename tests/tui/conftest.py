@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -14,6 +15,7 @@ from tribe.tui import TribeApp
 @pytest.fixture
 def make_app(tmp_path):
     def build(steps, yes=True):
+        os.environ["ANTHROPIC_API_KEY"] = "test-key"  # represent a logged-in session
         store = SessionStore(tmp_path / ".tribe" / "sessions")
         session_id = store.create()
         model = ScriptedModel(steps)

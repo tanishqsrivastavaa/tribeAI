@@ -126,6 +126,16 @@ def test_run_forwards_context_limit(tmp_path, scripted):
     assert holder["kwargs"][0]["context_limit"] == 32000
 
 
+def test_run_reports_model_error_without_traceback(tmp_path, scripted):
+    def boom(_messages):
+        raise RuntimeError("bad key")
+
+    scripted([boom])
+    result = runner.invoke(cli.app, ["run", "task", "--workspace", str(tmp_path), "--yes"])
+    assert result.exit_code == 1
+    assert "model error" in result.output
+
+
 def test_run_help_lists_providers():
     result = runner.invoke(cli.app, ["run", "--help"])
     assert result.exit_code == 0
