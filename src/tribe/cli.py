@@ -149,15 +149,18 @@ def chat(
 
     from .tui import run_tui
 
-    def loop_factory(observer, asker):
+    def loop_factory(observer, asker, provider_override=None, model_override=None):
         loop, _ = build_loop(
-            workspace, model, verbose, yes,
-            provider=provider, context_limit=context_limit,
+            workspace,
+            model_override or model,
+            verbose, yes,
+            provider=provider_override or provider,
+            context_limit=context_limit,
             store=store, observer=observer, asker=asker,
         )
         return loop
 
-    run_tui(loop_factory, store, session_id)
+    run_tui(loop_factory, store, session_id, provider=provider, model=model)
 
 
 @app.command()

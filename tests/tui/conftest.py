@@ -17,8 +17,10 @@ def make_app(tmp_path):
         store = SessionStore(tmp_path / ".tribe" / "sessions")
         session_id = store.create()
         model = ScriptedModel(steps)
+        calls: list[dict] = []
 
-        def loop_factory(observer, asker):
+        def loop_factory(observer, asker, provider=None, model_name=None):
+            calls.append({"provider": provider, "model": model_name})
             loop, _ = cli.build_loop(
                 str(tmp_path),
                 model=None,
@@ -32,6 +34,7 @@ def make_app(tmp_path):
             return loop
 
         app = TribeApp(loop_factory, store, session_id)
+        app.factory_calls = calls
         return app, store, session_id
 
     return build

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Callable
+import os
+from typing import Callable, Optional
 
 from textual import work
 from textual.app import App, ComposeResult
@@ -8,15 +9,17 @@ from textual.widgets import Footer, Header, Input, RichLog, Static
 
 from ..agent import AgentLoop
 from ..agent.limits import Cancellation
+from ..models import PROVIDERS
 from ..observability import Observer
 from ..observability.console import _short
 from ..sessions import SessionStore
 from ..sessions.messages import Message, Role, ToolStatus
 from . import messages as m
-from .observer import TuiObserver
 from .approval import TuiApprover
+from .login import ApiKeyScreen, ModelSelectScreen, ProviderSelectScreen
+from .observer import TuiObserver
 
-LoopFactory = Callable[[Observer, object], AgentLoop]
+LoopFactory = Callable[[Observer, object, Optional[str], Optional[str]], AgentLoop]
 
 
 class TribeApp(App):
@@ -33,6 +36,18 @@ class TribeApp(App):
     ApprovalModal { align: center middle; }
     #approval-title { padding-bottom: 1; }
     #approval-args { color: $text-muted; padding-bottom: 1; }
+    ProviderSelectScreen, ApiKeyScreen, ModelSelectScreen { align: center middle; }
+    #login-box {
+        width: 70%;
+        height: auto;
+        padding: 1 2;
+        border: thick $primary;
+        background: $surface;
+    }
+    #login-title { text-style: bold; padding-bottom: 1; }
+    #login-hint { color: $text-muted; padding-bottom: 1; }
+    #login-error { color: $error; }
+    #provider-list { height: auto; max-height: 15; }
     """
 
     BINDINGS = [
@@ -46,32 +61,40 @@ class TribeApp(App):
         store: SessionStore,
         session_id: str,
         model_name: str = "",
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
     ) -> None:
         super().__init__()
         self._loop_factory = loop_factory
         self.store = store
         self.session_id = session_id
         self.model_name = model_name
+        self.provider = provider
+        self.model = model
         self.loop: AgentLoop | None = None
         self.cancellation: Cancellation | None = None
         self._turn_active = False
+        self._observer: Observer | None = None
+        self._approver: TuiApprover | None = None
+        self._pending_provider: str | None = None
+        self._pending_key: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
         yield RichLog(id="transcript", wrap=True, markup=True)
         yield Static("", id="status")
-        yield Input(placeholder="Message the agent…", id="prompt")
+        yield Input(placeholder="Message the agent…  (/login to choose a model)", id="prompt")
         yield Footer()
 
     def on_mount(self) -> None:
         self.title = "Tribe"
-        self.loop = self._loop_factory(TuiObserver(self), TuiApprover(self))
-        self.model_name = self.model_name or self.loop.model.name
-        self.sub_title = f"{self.session_id[:8]} · {self.model_name}".strip(" ·")
+        self._observer = TuiObserver(self)
+        self._approver = TuiApprover(self)
         try:
             self.render_history(self.store.load(self.session_id))
         except FileNotFoundError:
             pass
+        self._build_loop(initial=True)
         self.query_one("#prompt", Input).focus()
 
     @property
@@ -80,6 +103,30 @@ class TribeApp(App):
 
     def _set_status(self, text: str) -> None:
         self.query_one("#status", Static).update(text)
+
+    def _update_subtitle(self) -> None:
+        state = self.model_name if self.loop is not None else "not logged in"
+        self.sub_title = f"{self.session_id[:8]} · {state}".strip(" ·")
+
+    def _build_loop(self, initial: bool = False) -> bool:
+        try:
+            self.loop = self._loop_factory(
+                self._observer, self._approver, self.provider, self.model
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.loop = None
+            if initial:
+                self._transcript.write(
+                    "[yellow]No model configured. Type [b]/login[/b] to choose a "
+                    "provider and add an API key.[/]"
+                )
+            else:
+                self._transcript.write(f"[red]could not initialize model: {exc}[/]")
+            self._update_subtitle()
+            return False
+        self.model_name = self.loop.model.name
+        self._update_subtitle()
+        return True
 
     def render_history(self, history: list[Message]) -> None:
         for msg in history:
@@ -97,7 +144,57 @@ class TribeApp(App):
         if not text or self._turn_active:
             return
         event.input.value = ""
+        if text.startswith("/"):
+            self._handle_command(text)
+            return
+        if self.loop is None:
+            self._transcript.write(
+                "[yellow]No model configured. Type [b]/login[/b] first.[/]"
+            )
+            return
         self._start_turn(text)
+
+    def _handle_command(self, text: str) -> None:
+        command = text[1:].split()[0].lower()
+        if command == "login":
+            self._start_login()
+        elif command == "help":
+            self._transcript.write("[dim]commands: /login (choose provider & model), /help[/]")
+        else:
+            self._transcript.write(f"[yellow]unknown command: /{command}[/]")
+
+    def _start_login(self) -> None:
+        self.push_screen(ProviderSelectScreen(), self._on_provider_chosen)
+
+    def _on_provider_chosen(self, provider: str | None) -> None:
+        if not provider:
+            return
+        self._pending_provider = provider
+        self.push_screen(ApiKeyScreen(provider), self._on_key_entered)
+
+    def _on_key_entered(self, key: str | None) -> None:
+        if key is None:
+            return
+        self._pending_key = key
+        self.push_screen(ModelSelectScreen(self._pending_provider), self._on_model_chosen)
+
+    def _on_model_chosen(self, model: str | None) -> None:
+        if not model:
+            return
+        self._apply_login(self._pending_provider, self._pending_key, model)
+
+    def _apply_login(self, provider: str, key: str, model: str) -> None:
+        env_var = PROVIDERS[provider].api_key_env
+        if key and env_var:
+            os.environ[env_var] = key
+        self.provider = provider
+        self.model = model
+        if self._build_loop():
+            self._transcript.write(
+                f"[b green]✓ logged in[/]  provider [b]{provider}[/] · "
+                f"model [b]{self.model_name}[/]"
+            )
+        self.query_one("#prompt", Input).focus()
 
     def _start_turn(self, text: str) -> None:
         self._turn_active = True
