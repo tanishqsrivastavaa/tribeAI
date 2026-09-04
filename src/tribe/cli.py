@@ -8,7 +8,7 @@ import typer
 from .agent import AgentLoop
 from .approvals import ApprovalGate, ApprovalPolicy
 from .context import ContextBuilder
-from .models import get_model
+from .models import get_model, known_providers
 from .observability import ConsoleObserver
 from .sessions import SessionStore
 
@@ -20,6 +20,11 @@ SYSTEM_INSTRUCTIONS = (
 )
 
 app = typer.Typer(help="Tribe, a minimal personal agent harness.", add_completion=False)
+
+_PROVIDER_HELP = (
+    f"Model provider: {', '.join(known_providers())} "
+    "(default: anthropic; or use provider:model)."
+)
 
 
 def _format_args(args: dict) -> str:
@@ -39,6 +44,8 @@ def build_loop(
     model: Optional[str],
     verbose: bool,
     yes: bool,
+    provider: Optional[str] = None,
+    context_limit: Optional[int] = None,
     model_factory=None,
 ) -> tuple[AgentLoop, SessionStore]:
     from .workspace import Workspace
@@ -51,7 +58,7 @@ def build_loop(
         else ApprovalGate(ApprovalPolicy.default(), asker=_prompt_approval)
     )
     loop = AgentLoop(
-        model=factory(model),
+        model=factory(model, provider=provider, context_limit=context_limit),
         workspace=Workspace(workspace),
         store=store,
         gate=gate,
@@ -91,12 +98,18 @@ def _interactive(loop: AgentLoop, session_id: str) -> None:
 def run(
     prompt: str = typer.Argument(..., help="The task for the agent."),
     workspace: str = typer.Option(".", help="Workspace root the agent may act within."),
-    model: Optional[str] = typer.Option(None, help="Model id (default: harness default)."),
+    provider: Optional[str] = typer.Option(None, "--provider", "-p", help=_PROVIDER_HELP),
+    model: Optional[str] = typer.Option(None, help="Model id (default: provider default)."),
+    context_limit: Optional[int] = typer.Option(
+        None, "--context-limit", help="Override the model context window in tokens."
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show a detailed run view."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve write and bash tools."),
 ) -> None:
     """Run a single task to completion."""
-    loop, store = build_loop(workspace, model, verbose, yes)
+    loop, store = build_loop(
+        workspace, model, verbose, yes, provider=provider, context_limit=context_limit
+    )
     session_id = store.create()
     result = loop.run(session_id, prompt)
     _report(result, session_id)
@@ -105,12 +118,18 @@ def run(
 @app.command()
 def chat(
     workspace: str = typer.Option(".", help="Workspace root the agent may act within."),
-    model: Optional[str] = typer.Option(None, help="Model id (default: harness default)."),
+    provider: Optional[str] = typer.Option(None, "--provider", "-p", help=_PROVIDER_HELP),
+    model: Optional[str] = typer.Option(None, help="Model id (default: provider default)."),
+    context_limit: Optional[int] = typer.Option(
+        None, "--context-limit", help="Override the model context window in tokens."
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show a detailed run view."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve write and bash tools."),
 ) -> None:
     """Start an interactive multi-turn session."""
-    loop, store = build_loop(workspace, model, verbose, yes)
+    loop, store = build_loop(
+        workspace, model, verbose, yes, provider=provider, context_limit=context_limit
+    )
     _interactive(loop, store.create())
 
 
@@ -119,12 +138,18 @@ def resume(
     session_id: str = typer.Argument(..., help="Session id to resume."),
     prompt: Optional[str] = typer.Argument(None, help="Optional task; omit for interactive."),
     workspace: str = typer.Option(".", help="Workspace root the agent may act within."),
-    model: Optional[str] = typer.Option(None, help="Model id (default: harness default)."),
+    provider: Optional[str] = typer.Option(None, "--provider", "-p", help=_PROVIDER_HELP),
+    model: Optional[str] = typer.Option(None, help="Model id (default: provider default)."),
+    context_limit: Optional[int] = typer.Option(
+        None, "--context-limit", help="Override the model context window in tokens."
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show a detailed run view."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve write and bash tools."),
 ) -> None:
     """Resume an existing session by id."""
-    loop, store = build_loop(workspace, model, verbose, yes)
+    loop, store = build_loop(
+        workspace, model, verbose, yes, provider=provider, context_limit=context_limit
+    )
     if not store.exists(session_id):
         typer.echo(f"unknown session: {session_id}", err=True)
         raise typer.Exit(code=1)

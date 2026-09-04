@@ -14,8 +14,14 @@ def scripted(monkeypatch):
     def install(steps):
         model = ScriptedModel(steps)
         holder["model"] = model
-        monkeypatch.setattr(cli, "get_model", lambda name=None, **kw: model)
-        return model
+        holder["kwargs"] = []
+
+        def factory(name=None, **kw):
+            holder["kwargs"].append({"model": name, **kw})
+            return model
+
+        monkeypatch.setattr(cli, "get_model", factory)
+        return holder
 
     return install
 
@@ -92,3 +98,36 @@ def test_help_lists_commands():
     assert result.exit_code == 0
     for command in ("run", "chat", "resume"):
         assert command in result.stdout
+
+
+def test_run_forwards_provider_and_model(tmp_path, scripted):
+    holder = scripted([ModelResponse(text="ok")])
+    result = runner.invoke(
+        cli.app,
+        [
+            "run", "task",
+            "--workspace", str(tmp_path),
+            "--provider", "groq",
+            "--model", "llama-3.1-8b-instant",
+            "--yes",
+        ],
+    )
+    assert result.exit_code == 0
+    assert holder["kwargs"][0]["provider"] == "groq"
+    assert holder["kwargs"][0]["model"] == "llama-3.1-8b-instant"
+
+
+def test_run_forwards_context_limit(tmp_path, scripted):
+    holder = scripted([ModelResponse(text="ok")])
+    runner.invoke(
+        cli.app,
+        ["run", "task", "--workspace", str(tmp_path), "--context-limit", "32000", "--yes"],
+    )
+    assert holder["kwargs"][0]["context_limit"] == 32000
+
+
+def test_run_help_lists_providers():
+    result = runner.invoke(cli.app, ["run", "--help"])
+    assert result.exit_code == 0
+    output = result.stdout
+    assert "groq" in output and "openrouter" in output
