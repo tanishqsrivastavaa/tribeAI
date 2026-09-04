@@ -13,3 +13,4 @@ wheels/
 /.tribe/sessions/*
 !/.tribe/sessions/.gitkeep
 CLAUDE.md
+result.txt
