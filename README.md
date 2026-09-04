@@ -153,9 +153,34 @@ tribe resume <session-id>
 
 The CLI will expose session identifiers, workspace and model selection, and a verbose mode for observing runs. Verbose output records model requests, estimated context usage, compaction events, approval decisions, tool inputs and outcomes, durations, and the limit that ended a run. The persisted session remains the complete audit trail; console output is a concise live view.
 
+## Model Providers
+
+The model layer sits behind a single interface, so the loop is provider-agnostic. Two backends cover the major providers: a native Anthropic backend, and an OpenAI-compatible backend that also serves any provider speaking the OpenAI Chat Completions API.
+
+| Provider | `--provider` | Key env var | Notes |
+| --- | --- | --- | --- |
+| Anthropic | `anthropic` (default) | `ANTHROPIC_API_KEY` | Native backend; also `ant auth login`. |
+| OpenAI | `openai` | `OPENAI_API_KEY` | |
+| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` | Routes to many upstream models. |
+| Groq | `groq` | `GROQ_API_KEY` | |
+| DeepSeek | `deepseek` | `DEEPSEEK_API_KEY` | |
+| Together | `together` | `TOGETHER_API_KEY` | |
+| Fireworks | `fireworks` | `FIREWORKS_API_KEY` | |
+| xAI | `xai` | `XAI_API_KEY` | |
+
+Select a provider and model explicitly, or use the `provider:model` shorthand:
+
+```text
+tribe run -p groq --model llama-3.3-70b-versatile "run the tests"
+tribe run -p openrouter --model anthropic/claude-3.5-sonnet "review this diff"
+tribe run --model openai:gpt-4o "summarize the README"
+```
+
+Each provider carries a default model, so `--provider groq` alone works. Context windows vary across providers; known models are mapped and the rest fall back to a safe default that `--context-limit` can override. Adding another OpenAI-compatible provider is a single entry in the provider registry.
+
 ## Status
 
-The harness is implemented end to end: the typed message model and append-only session store, the workspace boundary, the `read`/`grep`/`write`/`bash` tools, the approval gate, the model layer (Anthropic-backed, with an offline scripted model for tests), the context builder and compaction, the agent loop with execution limits, the console observer, and the `tribe` CLI (`run`, `chat`, `resume`). Every layer has tests.
+The harness is implemented end to end: the typed message model and append-only session store, the workspace boundary, the `read`/`grep`/`write`/`bash` tools, the approval gate, the model layer (Anthropic and OpenAI-compatible providers, with an offline scripted model for tests), the context builder and compaction, the agent loop with execution limits, the console observer, and the `tribe` CLI (`run`, `chat`, `resume`). Every layer has tests.
 
 ```bash
 uv sync                 # install dependencies
@@ -163,4 +188,4 @@ uv run pytest           # run the test suite
 uv run tribe run "inspect the project and run its tests" --verbose
 ```
 
-Running against a live model needs Anthropic credentials (`ANTHROPIC_API_KEY` or an `ant auth login` profile). The default model is `claude-opus-4-8`; override it with `--model`.
+Running against a live model needs credentials for the chosen provider (see [Model Providers](#model-providers)). The default provider is Anthropic and the default model is `claude-opus-4-8`; override them with `--provider` and `--model`.
