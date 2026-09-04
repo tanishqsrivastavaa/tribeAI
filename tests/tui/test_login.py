@@ -2,21 +2,12 @@ from __future__ import annotations
 
 import os
 
-import pytest
 from textual.widgets import Input
 
 from tribe.models import ModelResponse
 from tribe.sessions import SessionStore
 from tribe.tui import TribeApp
 from tribe.tui.login import ApiKeyScreen, ModelSelectScreen, ProviderSelectScreen
-
-
-@pytest.fixture(autouse=True)
-def restore_env():
-    snapshot = dict(os.environ)
-    yield
-    os.environ.clear()
-    os.environ.update(snapshot)
 
 
 async def _login_cmd(app, pilot):

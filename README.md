@@ -9,12 +9,51 @@ An experiment in building an agent runtime from small, understandable parts: exp
 ![Python](https://img.shields.io/badge/Python-pure-yellow?logo=python&logoColor=white)
 ![Inspiration](https://img.shields.io/badge/Inspired%20by-Pi%20(earendil)-blueviolet)
 
+<br/>
+
+<img src="docs/tribe-chat.png" alt="Tribe chat running in the terminal TUI" width="820"/>
+
+<sub>`tribe chat` — the interactive terminal UI, talking to the agent over the Tribe harness.</sub>
+
 </div>
 
 ---
 Tribe is a minimal, personal agent harness inspired by [Pi](https://github.com/earendil-works/pi). It is an experiment in building an agent runtime from small, understandable parts instead of a large framework.
 
 The goal is not to ship another general-purpose assistant. The goal is to own the loop: decide which model to use, which tools it can call, what enters its context window, and how the session survives long-running work.
+
+## Install
+
+Tribe is a standalone CLI. Install it as an isolated tool with [uv](https://docs.astral.sh/uv/) so the `tribe` command lands on your `PATH` and works from any directory:
+
+```bash
+uv tool install git+https://github.com/tanishqsrivastavaa/tribeAI
+# or, from a local clone:
+uv tool install .
+```
+
+Then just run it — no `uv run` prefix needed:
+
+```bash
+tribe chat
+```
+
+If your shell can't find `tribe` afterwards, put uv's tool bin directory on your `PATH` once with `uv tool update-shell`, then restart the shell. Upgrade later with `uv tool upgrade tribe`, or uninstall with `uv tool uninstall tribe`.
+
+Running against a live model needs an API key for your provider — the default is Anthropic (`ANTHROPIC_API_KEY`). See [Model Providers](#model-providers).
+
+### Developing on Tribe
+
+Install from a clone in editable mode so your local edits take effect immediately, and use uv for the test loop:
+
+```bash
+git clone https://github.com/tanishqsrivastavaa/tribeAI && cd tribeAI
+uv tool install --editable .    # `tribe` now reflects your working tree
+uv sync                         # create the dev environment
+uv run pytest                   # run the test suite
+```
+
+Changed dependencies (not just code)? Refresh the tool with `uv tool install --editable . --reinstall`.
 
 ## Design Principles
 
@@ -151,7 +190,9 @@ tribe run --workspace ./my-project --model <model> "fix the failing test"
 tribe resume <session-id>
 ```
 
-The CLI will expose session identifiers, workspace and model selection, and a verbose mode for observing runs. Verbose output records model requests, estimated context usage, compaction events, approval decisions, tool inputs and outcomes, durations, and the limit that ended a run. The persisted session remains the complete audit trail; console output is a concise live view.
+`tribe chat` opens the interactive terminal UI shown above: a live transcript of the conversation, tool activity, and inline approval prompts, with the agent running in the background so the interface stays responsive. Pass `--plain` (or pipe input) to fall back to a simple line-based REPL. The one-shot `run` and `resume` commands stream a concise console view instead.
+
+The CLI exposes session identifiers, workspace and model selection, and a verbose mode for observing runs. Verbose output records model requests, estimated context usage, compaction events, approval decisions, tool inputs and outcomes, durations, and the limit that ended a run. The persisted session remains the complete audit trail; console output is a concise live view.
 
 ## Model Providers
 
@@ -178,9 +219,13 @@ tribe run --model openai:gpt-4o "summarize the README"
 
 Each provider carries a default model, so `--provider groq` alone works. Context windows vary across providers; known models are mapped and the rest fall back to a safe default that `--context-limit` can override. Adding another OpenAI-compatible provider is a single entry in the provider registry.
 
+### Credentials and persistence
+
+Inside `tribe chat`, run `/login` to pick a provider, enter its API key, and choose a model. The key, provider, and model are saved to `~/.config/tribe/credentials.json` (respecting `XDG_CONFIG_HOME`, or `TRIBE_CONFIG_DIR`) with `0600` permissions, so later sessions — including `tribe run` and `tribe resume` — load them automatically and you don't re-enter the key. An API key set in the environment (e.g. an exported `GROQ_API_KEY`) always takes precedence over the stored one. Use `/model` to switch models later without re-entering the key. Keys are stored in plain text under your home directory; delete the file to forget them.
+
 ## Status
 
-The harness is implemented end to end: the typed message model and append-only session store, the workspace boundary, the `read`/`grep`/`write`/`bash` tools, the approval gate, the model layer (Anthropic and OpenAI-compatible providers, with an offline scripted model for tests), the context builder and compaction, the agent loop with execution limits, the console observer, and the `tribe` CLI (`run`, `chat`, `resume`). Every layer has tests.
+The harness is implemented end to end: the typed message model and append-only session store, the workspace boundary, the `read`/`grep`/`write`/`bash` tools, the approval gate, the model layer (Anthropic and OpenAI-compatible providers, with an offline scripted model for tests), the context builder and compaction, the agent loop with execution limits, the console observer, the interactive terminal UI (`tribe chat`), and the `tribe` CLI (`run`, `chat`, `resume`). Every layer has tests.
 
 ```bash
 uv sync                 # install dependencies

@@ -56,8 +56,10 @@ def build_loop(
     observer=None,
     asker=None,
 ) -> tuple[AgentLoop, SessionStore]:
+    from . import config
     from .workspace import Workspace
 
+    provider, model = config.resolve_startup(provider, model)
     factory = model_factory or get_model
     store = store or SessionStore(Path(workspace) / ".tribe" / "sessions")
     gate = (
@@ -136,6 +138,9 @@ def chat(
     plain: bool = typer.Option(False, "--plain", help="Use the plain line REPL instead of the TUI."),
 ) -> None:
     """Start an interactive multi-turn session in the TUI (or a plain REPL)."""
+    from . import config
+
+    provider, model = config.resolve_startup(provider, model)
     store = SessionStore(Path(workspace) / ".tribe" / "sessions")
     session_id = store.create()
 

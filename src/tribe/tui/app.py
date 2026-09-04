@@ -7,6 +7,7 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.widgets import Footer, Header, Input, RichLog, Static
 
+from .. import config
 from ..agent import AgentLoop
 from ..agent.limits import Cancellation
 from ..models import DEFAULT_PROVIDER, PROVIDERS
@@ -201,9 +202,10 @@ class TribeApp(App):
         self.provider = provider
         self.model = model
         if self._build_loop():
+            config.remember_credentials(provider, model, key or None)
             self._transcript.write(
                 f"[b green]✓ logged in[/]  provider [b]{provider}[/] · "
-                f"model [b]{self.model_name}[/]"
+                f"model [b]{self.model_name}[/]  [dim](saved)[/]"
             )
         self.query_one("#prompt", Input).focus()
 
@@ -221,6 +223,7 @@ class TribeApp(App):
             return
         self.model = model
         if self._build_loop():
+            config.remember_credentials(self.provider, model)
             self._transcript.write(f"[b green]✓ model set[/]  [b]{self.model_name}[/]")
         self.query_one("#prompt", Input).focus()
 
