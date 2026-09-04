@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -34,6 +35,10 @@ def _format_args(args: dict) -> str:
     return str(args)
 
 
+def _stdout_isatty() -> bool:
+    return sys.stdout.isatty()
+
+
 def _prompt_approval(tool: str, args: dict) -> bool:
     answer = input(f"Approve {tool} {_format_args(args)}? [y/N] ").strip().lower()
     return answer in ("y", "yes")
@@ -47,15 +52,18 @@ def build_loop(
     provider: Optional[str] = None,
     context_limit: Optional[int] = None,
     model_factory=None,
+    store: Optional[SessionStore] = None,
+    observer=None,
+    asker=None,
 ) -> tuple[AgentLoop, SessionStore]:
     from .workspace import Workspace
 
     factory = model_factory or get_model
-    store = SessionStore(Path(workspace) / ".tribe" / "sessions")
+    store = store or SessionStore(Path(workspace) / ".tribe" / "sessions")
     gate = (
         ApprovalGate(ApprovalPolicy.auto_approve())
         if yes
-        else ApprovalGate(ApprovalPolicy.default(), asker=_prompt_approval)
+        else ApprovalGate(ApprovalPolicy.default(), asker=asker or _prompt_approval)
     )
     loop = AgentLoop(
         model=factory(model, provider=provider, context_limit=context_limit),
@@ -63,7 +71,7 @@ def build_loop(
         store=store,
         gate=gate,
         builder=ContextBuilder(instructions=SYSTEM_INSTRUCTIONS),
-        observer=ConsoleObserver(verbose=verbose),
+        observer=observer or ConsoleObserver(verbose=verbose),
     )
     return loop, store
 
@@ -125,12 +133,31 @@ def chat(
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show a detailed run view."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve write and bash tools."),
+    plain: bool = typer.Option(False, "--plain", help="Use the plain line REPL instead of the TUI."),
 ) -> None:
-    """Start an interactive multi-turn session."""
-    loop, store = build_loop(
-        workspace, model, verbose, yes, provider=provider, context_limit=context_limit
-    )
-    _interactive(loop, store.create())
+    """Start an interactive multi-turn session in the TUI (or a plain REPL)."""
+    store = SessionStore(Path(workspace) / ".tribe" / "sessions")
+    session_id = store.create()
+
+    if plain or not _stdout_isatty():
+        loop, _ = build_loop(
+            workspace, model, verbose, yes,
+            provider=provider, context_limit=context_limit, store=store,
+        )
+        _interactive(loop, session_id)
+        return
+
+    from .tui import run_tui
+
+    def loop_factory(observer, asker):
+        loop, _ = build_loop(
+            workspace, model, verbose, yes,
+            provider=provider, context_limit=context_limit,
+            store=store, observer=observer, asker=asker,
+        )
+        return loop
+
+    run_tui(loop_factory, store, session_id)
 
 
 @app.command()
