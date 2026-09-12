@@ -4,12 +4,12 @@ import os
 from types import SimpleNamespace
 
 import pytest
-from textual.widgets import RichLog
 
 from tribe import cli
 from tribe.models import ScriptedModel
 from tribe.sessions import SessionStore
 from tribe.tui import TribeApp
+from tribe.tui.composer import Composer
 
 
 @pytest.fixture
@@ -42,18 +42,39 @@ def make_app(tmp_path):
     return build
 
 
+class _LiveLines:
+    """Live view over mounted transcript widgets; reads current text at iteration."""
+
+    def __init__(self, widgets):
+        self._widgets = widgets
+
+    def __iter__(self):
+        for widget in list(self._widgets):
+            value = getattr(widget, "text_value", None)
+            if value:
+                yield value
+
+
 def _record_transcript(app):
-    """Wrap the transcript's write to capture rendered lines as plain text."""
-    log = app.query_one(RichLog)
-    lines: list[str] = []
-    original = log.write
+    """Capture transcript content by tracking widgets mounted into it."""
+    captured = list(app._transcript.children)
+    original = app._mount
 
-    def write(content, *args, **kwargs):
-        lines.append(str(content))
-        return original(content, *args, **kwargs)
+    def mount(widget):
+        captured.append(widget)
+        return original(widget)
 
-    log.write = write
-    return lines
+    app._mount = mount
+    return _LiveLines(captured)
+
+
+def _set_prompt(app, text):
+    app.query_one("#prompt", Composer).value = text
+
+
+async def _submit(pilot, text):
+    pilot.app.query_one("#prompt", Composer).value = text
+    await pilot.press("enter")
 
 
 async def _settle(pilot):
@@ -73,6 +94,8 @@ async def _wait_until(pilot, predicate, tries=50):
 def helpers():
     return SimpleNamespace(
         record_transcript=_record_transcript,
+        set_prompt=_set_prompt,
+        submit=_submit,
         settle=_settle,
         wait_until=_wait_until,
     )

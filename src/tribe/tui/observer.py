@@ -21,12 +21,23 @@ class TuiObserver(Observer):
     def model_request(self, estimated_tokens: int, message_count: int) -> None:
         self.app.post_message(m.ModelActivity(estimated_tokens, message_count))
 
+    def model_response(self, response: Any) -> None:
+        text = getattr(response, "text", "") or ""
+        if text.strip():
+            self.app.post_message(m.AssistantText(text))
+
     def tool_start(self, name: str, args: dict[str, Any]) -> None:
         self.app.post_message(m.ToolStarted(name, args))
 
     def tool_end(self, name: str, result: Any, duration: float) -> None:
         self.app.post_message(
-            m.ToolEnded(name, result.is_error, result.error, duration)
+            m.ToolEnded(
+                name,
+                result.is_error,
+                result.error,
+                result.output or "",
+                duration,
+            )
         )
 
     def approval(self, decision: Any) -> None:
