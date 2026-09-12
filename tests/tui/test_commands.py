@@ -8,6 +8,7 @@ from tribe.sessions import SessionStore
 from tribe.sessions import messages as smsg
 from tribe.sessions.messages import Role
 from tribe.tui import TribeApp
+from tribe.tui.composer import Composer
 from tribe.tui.login import ModelSelectScreen
 from tribe.tui.screens import SessionsScreen
 
@@ -18,7 +19,7 @@ async def test_model_command_opens_screen_when_provider_set(make_app, helpers):
     app, _, _ = make_app([ModelResponse(text="x")])
     async with app.run_test() as pilot:
         assert app.provider == "anthropic"  # effective provider after a default build
-        app.query_one("#prompt", Input).value = "/model"
+        app.query_one("#prompt", Composer).value = "/model"
         await pilot.press("enter")
         assert await helpers.wait_until(
             pilot, lambda: isinstance(app.screen, ModelSelectScreen)
@@ -28,7 +29,7 @@ async def test_model_command_opens_screen_when_provider_set(make_app, helpers):
 async def test_model_change_rebuilds_with_new_model(make_app, helpers):
     app, _, _ = make_app([ModelResponse(text="x")])
     async with app.run_test() as pilot:
-        app.query_one("#prompt", Input).value = "/model"
+        app.query_one("#prompt", Composer).value = "/model"
         await pilot.press("enter")
         assert await helpers.wait_until(
             pilot, lambda: isinstance(app.screen, ModelSelectScreen)
@@ -53,7 +54,7 @@ async def test_model_command_without_provider_hints_login(tmp_path, helpers):
     async with app.run_test() as pilot:
         assert app.provider is None
         lines = helpers.record_transcript(app)
-        app.query_one("#prompt", Input).value = "/model"
+        app.query_one("#prompt", Composer).value = "/model"
         await pilot.press("enter")
         await pilot.pause()
 
@@ -64,7 +65,7 @@ async def test_model_cancel_leaves_model_unchanged(make_app, helpers):
     app, _, _ = make_app([ModelResponse(text="x")])
     async with app.run_test() as pilot:
         before = app.model
-        app.query_one("#prompt", Input).value = "/model"
+        app.query_one("#prompt", Composer).value = "/model"
         await pilot.press("enter")
         assert await helpers.wait_until(
             pilot, lambda: isinstance(app.screen, ModelSelectScreen)
@@ -80,7 +81,7 @@ async def test_model_cancel_leaves_model_unchanged(make_app, helpers):
 async def test_sessions_command_opens_picker(make_app, helpers):
     app, _, _ = make_app([ModelResponse(text="x")])
     async with app.run_test() as pilot:
-        app.query_one("#prompt", Input).value = "/sessions"
+        app.query_one("#prompt", Composer).value = "/sessions"
         await pilot.press("enter")
         assert await helpers.wait_until(pilot, lambda: isinstance(app.screen, SessionsScreen))
 
@@ -92,7 +93,7 @@ async def test_sessions_switch_loads_history_and_targets_new_session(make_app, h
 
     async with app.run_test() as pilot:
         lines = helpers.record_transcript(app)
-        app.query_one("#prompt", Input).value = "/sessions"
+        app.query_one("#prompt", Composer).value = "/sessions"
         await pilot.press("enter")
         assert await helpers.wait_until(pilot, lambda: isinstance(app.screen, SessionsScreen))
         await pilot.press("enter")  # most recent (the non-empty "other")
@@ -102,7 +103,7 @@ async def test_sessions_switch_loads_history_and_targets_new_session(make_app, h
         assert any("hello old session" in line for line in lines)
 
         # a new turn now targets the switched session
-        app.query_one("#prompt", Input).value = "hi again"
+        app.query_one("#prompt", Composer).value = "hi again"
         await pilot.press("enter")
         await helpers.settle(pilot)
 
@@ -114,7 +115,7 @@ async def test_sessions_switch_loads_history_and_targets_new_session(make_app, h
 async def test_sessions_cancel_keeps_current(make_app, helpers):
     app, _, current_id = make_app([ModelResponse(text="x")])
     async with app.run_test() as pilot:
-        app.query_one("#prompt", Input).value = "/sessions"
+        app.query_one("#prompt", Composer).value = "/sessions"
         await pilot.press("enter")
         assert await helpers.wait_until(pilot, lambda: isinstance(app.screen, SessionsScreen))
         await pilot.press("escape")
@@ -122,11 +123,12 @@ async def test_sessions_cancel_keeps_current(make_app, helpers):
     assert app.session_id == current_id
 
 
-async def test_help_lists_new_commands(make_app, helpers):
+async def test_help_opens_help_screen_listing_commands(make_app, helpers):
+    from tribe.tui.screens import _HELP_TEXT, HelpScreen
+
     app, _, _ = make_app([ModelResponse(text="x")])
     async with app.run_test() as pilot:
-        lines = helpers.record_transcript(app)
-        app.query_one("#prompt", Input).value = "/help"
+        app.query_one("#prompt", Composer).value = "/help"
         await pilot.press("enter")
-        await pilot.pause()
-    assert any("/model" in line and "/sessions" in line for line in lines)
+        assert await helpers.wait_until(pilot, lambda: isinstance(app.screen, HelpScreen))
+    assert "/model" in _HELP_TEXT and "/sessions" in _HELP_TEXT

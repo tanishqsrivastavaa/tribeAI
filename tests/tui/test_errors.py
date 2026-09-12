@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from textual.widgets import Input
-
 from tribe.agent import AgentLoop
 from tribe.approvals import ApprovalGate, ApprovalPolicy
 from tribe.models import ModelResponse, ScriptedModel
 from tribe.sessions import SessionStore
 from tribe.tui import TribeApp
+from tribe.tui.composer import Composer
 from tribe.workspace import Workspace
 
 
@@ -27,7 +26,7 @@ async def test_no_credentials_stays_open_and_prompts_login(tmp_path, helpers):
     async with app.run_test() as pilot:
         assert app.loop is None
         lines = helpers.record_transcript(app)
-        app.query_one("#prompt", Input).value = "hello"
+        app.query_one("#prompt", Composer).value = "hello"
         await pilot.press("enter")
         await pilot.pause()
 
@@ -43,11 +42,11 @@ async def test_model_error_keeps_app_open(make_app, helpers):
     app, _, _ = make_app([boom])
     async with app.run_test() as pilot:
         lines = helpers.record_transcript(app)
-        app.query_one("#prompt", Input).value = "hi"
+        app.query_one("#prompt", Composer).value = "hi"
         await pilot.press("enter")
         await helpers.settle(pilot)
         assert not app._turn_active  # turn ended cleanly, app did not crash
-        assert not app.query_one("#prompt", Input).disabled
+        assert not app.query_one("#prompt", Composer).disabled
 
     assert any("model error" in line for line in lines)
     assert any("401 Unauthorized" in line for line in lines)
@@ -74,7 +73,7 @@ async def test_login_recovers_after_missing_credentials(tmp_path, helpers):
         await pilot.pause()
         assert app.loop is not None  # loop is built once credentials exist
         lines = helpers.record_transcript(app)
-        app.query_one("#prompt", Input).value = "hi now"
+        app.query_one("#prompt", Composer).value = "hi now"
         await pilot.press("enter")
         await helpers.settle(pilot)
 

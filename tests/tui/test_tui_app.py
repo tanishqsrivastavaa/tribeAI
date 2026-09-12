@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from textual.widgets import Input
-
 from tribe.models import ModelResponse, ToolCall
 from tribe.sessions.messages import Role
+from tribe.tui.composer import Composer
 from tribe.tui.screens import ApprovalModal
 
 
 async def _submit(pilot, text):
-    pilot.app.query_one("#prompt", Input).value = text
+    pilot.app.query_one("#prompt", Composer).value = text
     await pilot.press("enter")
 
 
