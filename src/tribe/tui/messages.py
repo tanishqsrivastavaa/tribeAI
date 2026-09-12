@@ -19,6 +19,12 @@ class ModelActivity(Message):
         self.message_count = message_count
 
 
+class AssistantText(Message):
+    def __init__(self, text: str) -> None:
+        super().__init__()
+        self.text = text
+
+
 class ToolStarted(Message):
     def __init__(self, name: str, args: dict[str, Any]) -> None:
         super().__init__()
@@ -27,12 +33,27 @@ class ToolStarted(Message):
 
 
 class ToolEnded(Message):
-    def __init__(self, name: str, is_error: bool, error: str | None, duration: float) -> None:
+    def __init__(
+        self,
+        name: str,
+        is_error: bool,
+        error: str | None,
+        output: str,
+        duration: float,
+    ) -> None:
         super().__init__()
         self.name = name
         self.is_error = is_error
         self.error = error
+        self.output = output
         self.duration = duration
+
+
+class ApprovalRequested(Message):
+    def __init__(self, tool: str, args: dict[str, Any]) -> None:
+        super().__init__()
+        self.tool = tool
+        self.args = args
 
 
 class ApprovalResolved(Message):
