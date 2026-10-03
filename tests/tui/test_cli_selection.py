@@ -43,3 +43,15 @@ def test_tty_launches_tui(tmp_path, spies, monkeypatch):
     assert result.exit_code == 0
     assert spies["tui"] == 1
     assert spies["interactive"] == 0
+
+
+def test_tui_receives_workspace(tmp_path, monkeypatch):
+    import tribe.tui as tui
+
+    seen = {}
+    monkeypatch.setattr(cli, "get_model", lambda name=None, **kw: ScriptedModel([ModelResponse()]))
+    monkeypatch.setattr(cli, "_stdout_isatty", lambda: True)
+    monkeypatch.setattr(tui, "run_tui", lambda *a, **k: seen.update(k))
+    result = runner.invoke(cli.app, ["chat", "--workspace", str(tmp_path)])
+    assert result.exit_code == 0
+    assert seen["workspace"] == str(tmp_path)

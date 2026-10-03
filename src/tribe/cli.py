@@ -182,7 +182,7 @@ def chat(
         )
         return loop
 
-    run_tui(loop_factory, store, session_id, provider=provider, model=model)
+    run_tui(loop_factory, store, session_id, provider=provider, model=model, workspace=workspace)
 
 
 @app.command()
