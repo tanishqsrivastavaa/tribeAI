@@ -1,27 +1,43 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
-from rich.text import Text
-from textual.widgets import Collapsible, Markdown, Static
+from textual.color import Color
+from textual.content import Content
+from textual.widget import Widget
+from textual.widgets import Collapsible, Markdown, OptionList, Static
+from textual.widgets.option_list import Option
 
 _MAX_OUTPUT_LINES = 200
 _MAX_OUTPUT_CHARS = 8000
+_SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+_WORDMARK = ("▀█▀ █▀▄ █ █▀▄ █▀▀", " █  █▀▄ █ █▀▄ █▀ ", " ▀  ▀ ▀ ▀ ▀▀  ▀▀▀")
+
+COMMANDS = [
+    ("/login", "provider, API key, and model"),
+    ("/model", "switch the active model"),
+    ("/sessions", "browse and resume sessions"),
+    ("/new", "start a fresh session"),
+    ("/clear", "clear the transcript view"),
+    ("/help", "keys and commands"),
+]
 
 _GLYPH = {
-    "awaiting": ("◌", "yellow"),
-    "running": ("▸", "cyan"),
-    "ok": ("✓", "green"),
-    "error": ("✗", "red"),
-    "denied": ("⊘", "yellow"),
+    "awaiting": ("◌", "$warning"),
+    "running": ("●", "$secondary"),
+    "ok": ("✓", "$success"),
+    "error": ("✗", "$error"),
+    "denied": ("⊘", "$warning"),
 }
 
 
 def format_duration(seconds: float) -> str:
-    ms = seconds * 1000
-    if ms < 1000:
-        return f"{ms:.0f}ms"
-    return f"{seconds:.1f}s"
+    if seconds < 1:
+        return f"{seconds * 1000:.0f}ms"
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    return f"{int(seconds // 60)}m {int(seconds % 60)}s"
 
 
 def format_bytes(n: int) -> str:
@@ -35,6 +51,11 @@ def format_bytes(n: int) -> str:
 def _clip(value: Any, limit: int = 68) -> str:
     text = str(value).replace("\n", " ")
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _spread(left: Content, right: Content, width: int) -> Content:
+    gap = max(1, width - left.cell_length - right.cell_length)
+    return Content.assemble(left, " " * gap, right)
 
 
 def tool_summary(name: str, args: dict[str, Any]) -> str:
@@ -79,19 +100,27 @@ class ToolActivity(Collapsible):
         self.state = "running"
         self._meta = ""
         self._output_text = ""
-        self._output = Static(Text(" "), classes="tool-output", markup=False)
-        super().__init__(self._output, title=self._title_text(), collapsed=True)
+        self._output = Static(" ", classes="tool-output", markup=False)
+        super().__init__(
+            self._output,
+            title=self._title_text(),
+            collapsed=True,
+            collapsed_symbol="",
+            expanded_symbol="",
+        )
         self.add_class("tool")
 
-    def _title_text(self) -> str:
-        glyph, _ = _GLYPH.get(self.state, ("·", "white"))
-        summary = tool_summary(self.tool_name, self.args)
-        return f"{glyph} {summary}  {self._meta}".rstrip()
+    def _title_text(self) -> Content:
+        glyph, color = _GLYPH[self.state]
+        verb, _, target = tool_summary(self.tool_name, self.args).partition(" ")
+        meta = (f"  {self._meta}", "$text-muted") if self._meta else ""
+        return Content.assemble((glyph, color), " ", (verb, "bold"), " ", target, meta)
 
-    def _apply_state_class(self) -> None:
-        for name in ("tool-awaiting", "tool-running", "tool-ok", "tool-error", "tool-denied"):
-            self.remove_class(name)
+    def _apply_state(self) -> None:
+        for name in _GLYPH:
+            self.remove_class(f"tool-{name}")
         self.add_class(f"tool-{self.state}")
+        self.title = self._title_text()
 
     @property
     def text_value(self) -> str:
@@ -99,42 +128,40 @@ class ToolActivity(Collapsible):
         return f"{head}\n{self._output_text}".strip()
 
     def on_mount(self) -> None:
-        self._apply_state_class()
-        self.title = self._title_text()
+        self._apply_state()
 
     def set_awaiting(self) -> None:
         self.state = "awaiting"
         self._meta = "awaiting approval"
-        self.title = self._title_text()
-        self._apply_state_class()
+        self._apply_state()
 
     def set_running(self) -> None:
         self.state = "running"
         self._meta = ""
-        self.title = self._title_text()
-        self._apply_state_class()
+        self._apply_state()
 
     def set_denied(self, reason: str) -> None:
         self.state = "denied"
         self._meta = f"denied — {reason}"
-        self.title = self._title_text()
-        self._apply_state_class()
+        self._apply_state()
 
     def finalize(
         self, is_error: bool, error: str | None, output: str, duration: float
     ) -> None:
         self.state = "error" if is_error else "ok"
-        parts = [format_duration(duration)]
-        if is_error and error:
-            parts.insert(0, _clip(error, 48))
-        self._meta = " · ".join(p for p in parts if p)
-
-        body = ""
         if is_error and error and error not in (output or ""):
             body = error + (("\n\n" + output) if output else "")
         else:
             body = output or ""
         self._output_text = body
+
+        parts = [format_duration(duration)]
+        if is_error and error:
+            parts.insert(0, _clip(error, 48))
+        elif body:
+            count = len(body.splitlines())
+            parts.insert(0, f"{count} line" + ("" if count == 1 else "s"))
+        self._meta = " · ".join(parts)
 
         clipped, hidden = _clip_output(body)
         if clipped:
@@ -144,18 +171,14 @@ class ToolActivity(Collapsible):
             if is_error:
                 self.collapsed = False
         else:
-            self._output.update(Text("(no output)", style="dim"))
-        self.title = self._title_text()
-        self._apply_state_class()
+            self._output.update(Content.styled("(no output)", "$text-muted"))
+        self._apply_state()
 
 
 class UserMessage(Static):
     def __init__(self, content: str) -> None:
         self.text_value = content
-        text = Text()
-        text.append("› ", style="bold cyan")
-        text.append(content)
-        super().__init__(text, classes="user-msg", markup=False)
+        super().__init__(Content.assemble(("❯ ", "bold $primary"), content), classes="user-msg")
 
 
 class AssistantMessage(Markdown):
@@ -165,102 +188,154 @@ class AssistantMessage(Markdown):
 
 
 class EventLine(Static):
-    """A subtle, dim one-liner: compaction, stop notices, system hints."""
+    """A subtle one-liner: compaction, stop notices, system hints. kind: muted|success|warning|error."""
 
-    def __init__(self, text: str, style: str = "dim") -> None:
+    def __init__(self, text: str, kind: str = "muted") -> None:
         self.text_value = text
-        super().__init__(Text(text, style=style), classes="event-line", markup=False)
+        super().__init__(Content(text), classes=f"event-line event-{kind}")
 
 
-class CommandMenu(Static):
-    """A compact, filtered list of slash commands shown above the composer."""
+class Banner(Widget):
+    """Welcome card: gradient wordmark beside the session facts."""
 
-    def __init__(self, commands: list[tuple[str, str]]) -> None:
-        super().__init__(Text(" "), classes="command-menu", markup=False)
-        self.commands = commands
-        self.matches: list[tuple[str, str]] = []
-        self.index = 0
-        self._open = False
+    def __init__(self, version: str = "") -> None:
+        super().__init__()
+        self.version = version
+        self.rows: list[tuple[str, Content]] = []
 
-    def _hide(self) -> None:
-        self._open = False
-        self.matches = []
-        self.update(Text(" "))
+    def set_rows(self, rows: list[tuple[str, Content]]) -> None:
+        self.rows = rows
+        self.refresh(layout=True)
 
-    @property
-    def active(self) -> bool:
-        return self._open and bool(self.matches)
-
-    def update_query(self, text: str) -> None:
-        if not text.startswith("/") or " " in text:
-            # no command context, or a full command plus an argument is typed
-            self._hide()
-            return
-        query = text[1:].split(" ", 1)[0].lower()
-        matches = [c for c in self.commands if c[0][1:].startswith(query)]
-        if not matches:
-            self._hide()
-            return
-        self.matches = matches
-        self.index = min(self.index, len(self.matches) - 1)
-        self._open = True
-        self._render_options()
-
-    def move(self, delta: int) -> None:
-        if not self.matches:
-            return
-        self.index = (self.index + delta) % len(self.matches)
-        self._render_options()
-
-    def selected(self) -> str | None:
-        if not self.matches:
-            return None
-        return self.matches[self.index][0]
-
-    def _render_options(self) -> None:
-        out = Text()
-        for i, (name, desc) in enumerate(self.matches):
-            selected = i == self.index
-            out.append("› " if selected else "  ", style="cyan")
-            out.append(f"{name:<12}", style="bold" if selected else "white")
-            out.append(desc, style="dim")
-            if i != len(self.matches) - 1:
-                out.append("\n")
-        self.update(out)
+    def render(self) -> Content:
+        theme = self.app.current_theme
+        start = Color.parse(theme.primary)
+        end = Color.parse(theme.secondary or theme.primary)
+        width = len(_WORDMARK[0])
+        marks = [
+            Content.assemble(
+                *((ch, f"bold {start.blend(end, x / width).hex}") for x, ch in enumerate(line))
+            )
+            for line in _WORDMARK
+        ]
+        marks.append(Content.styled(f"v{self.version}".ljust(width) if self.version else "", "$text-muted"))
+        lines = []
+        for i in range(max(len(marks), len(self.rows))):
+            mark = marks[i] if i < len(marks) else Content("")
+            line = Content.assemble(mark, " " * (width - mark.cell_length + 4))
+            if i < len(self.rows):
+                label, value = self.rows[i]
+                line = Content.assemble(line, (f"{label:<11}", "$text-muted"), value)
+            lines.append(line)
+        tip = Content.from_markup(
+            "[$text-muted]type [b $foreground]/[/] for commands · "
+            "[b $foreground]shift+enter[/] for a newline · [b $foreground]F1[/] for help"
+        )
+        return Content("\n").join([*lines, Content(""), tip])
 
 
-class StatusBar(Static):
+class ActivityLine(Widget):
+    """The live 'working' row above the composer: spinner, label, elapsed, hint."""
+
     def __init__(self) -> None:
-        super().__init__(Text(" "), classes="status-bar", markup=False)
-        self.state = "idle"
-        self.model = ""
+        super().__init__(id="activity")
+        self.label = ""
+        self.hint = ""
+        self.started = 0.0
+        self._timer = None
+
+    def start(self, label: str) -> None:
+        self.label = label
+        if self._timer is None:
+            self.started = time.monotonic()
+            self._timer = self.set_interval(1 / 12, self.refresh)
+        self.refresh()
+
+    def stop(self) -> None:
+        if self._timer is not None:
+            self._timer.stop()
+            self._timer = None
+        self.label = ""
+        self.refresh()
+
+    def set_hint(self, hint: str) -> None:
+        self.hint = hint
+        self.refresh()
+
+    def render(self) -> Content:
+        right = Content.styled(self.hint, "$text-muted")
+        if not self.label:
+            return _spread(Content(""), right, self.size.width)
+        elapsed = time.monotonic() - self.started
+        frame = _SPINNER[int(elapsed * 12) % len(_SPINNER)]
+        left = Content.assemble(
+            (f"{frame} ", "bold $primary"),
+            (f"{self.label}… ", "$foreground"),
+            (f"{int(elapsed)}s", "$text-muted"),
+        )
+        return _spread(left, right, self.size.width)
+
+
+class StatusBar(Widget):
+    """The quiet line under the composer: where you are, which session, how full the context is."""
+
+    def __init__(self) -> None:
+        super().__init__(id="status-bar")
+        self.workspace = ""
+        self.branch = ""
         self.session = ""
         self.est_tokens = 0
         self.context_limit = 0
 
-    _STATE_GLYPH = {
-        "idle": ("◇", "dim"),
-        "working": ("●", "cyan"),
-        "awaiting": ("◌", "yellow"),
-        "interrupting": ("■", "yellow"),
-        "error": ("✗", "red"),
-        "offline": ("○", "dim"),
-    }
-
     def set(self, **fields: Any) -> None:
         for key, value in fields.items():
             setattr(self, key, value)
-        self.refresh_bar()
+        self.refresh()
 
-    def refresh_bar(self) -> None:
-        glyph, color = self._STATE_GLYPH.get(self.state, ("◇", "dim"))
-        line = Text()
-        line.append(f"{glyph} ", style=color)
-        line.append(f"{self.state:<12}", style=color)
-        line.append(self.model or "no model", style="bold" if self.model else "dim")
+    def render(self) -> Content:
+        left = [(self.workspace, "$text-muted")]
+        if self.branch:
+            left.append((f" ⎇ {self.branch}", "$secondary"))
+        if self.session:
+            left.append((f" · {self.session[:8]}", "$text-muted"))
+        right = [("F1 help", "$text-muted")]
         if self.context_limit:
             pct = min(100, int(self.est_tokens / self.context_limit * 100))
-            line.append(f"   ctx {pct}%", style="yellow" if pct >= 60 else "dim")
-        if self.session:
-            line.append(f"   {self.session[:8]}", style="dim")
-        self.update(line)
+            right[:0] = [(f"ctx {pct}%", "$warning" if pct >= 60 else "$text-muted"), "  ·  "]
+        return _spread(Content.assemble(*left), Content.assemble(*right), self.size.width)
+
+
+class CommandMenu(OptionList, can_focus=False):
+    """A compact, filtered list of slash commands shown above the composer."""
+
+    def __init__(self, commands: list[tuple[str, str]]) -> None:
+        super().__init__(id="command-menu")
+        self.commands = commands
+        self.matches: list[tuple[str, str]] = []
+
+    @property
+    def active(self) -> bool:
+        return bool(self.matches)
+
+    def update_query(self, text: str) -> None:
+        if text.startswith("/") and " " not in text:
+            query = text[1:].lower()
+            self.matches = [c for c in self.commands if c[0][1:].startswith(query)]
+        else:
+            self.matches = []
+        self.set_options(
+            Option(Content.assemble((f"{name:<12}", "bold"), (desc, "$text-muted")))
+            for name, desc in self.matches
+        )
+        if self.matches:
+            self.highlighted = 0
+        self.display = self.active
+
+    def move(self, delta: int) -> None:
+        if self.matches:
+            self.highlighted = ((self.highlighted or 0) + delta) % len(self.matches)
+
+    def selected(self) -> str | None:
+        if not self.matches or self.highlighted is None:
+            return None
+        return self.matches[self.highlighted][0]
