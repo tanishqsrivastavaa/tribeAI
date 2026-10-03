@@ -124,11 +124,26 @@ async def test_sessions_cancel_keeps_current(make_app, helpers):
 
 
 async def test_help_opens_help_screen_listing_commands(make_app, helpers):
-    from tribe.tui.screens import _HELP_TEXT, HelpScreen
+    from tribe.tui.screens import HelpScreen, help_content
 
     app, _, _ = make_app([ModelResponse(text="x")])
     async with app.run_test() as pilot:
         app.query_one("#prompt", Composer).value = "/help"
         await pilot.press("enter")
         assert await helpers.wait_until(pilot, lambda: isinstance(app.screen, HelpScreen))
-    assert "/model" in _HELP_TEXT and "/sessions" in _HELP_TEXT
+    text = str(help_content())
+    assert "/model" in text and "/sessions" in text and "esc" in text
+
+
+async def test_partial_command_runs_highlighted_match(make_app, helpers):
+    app, _, _ = make_app([ModelResponse(text="x")])
+    async with app.run_test() as pilot:
+        composer = app.query_one("#prompt", Composer)
+        composer.focus()
+        await pilot.press(*"/mo")
+        await pilot.pause()
+        assert app._menu is not None and app._menu.selected() == "/model"
+        await pilot.press("enter")
+        assert await helpers.wait_until(
+            pilot, lambda: isinstance(app.screen, ModelSelectScreen)
+        )
