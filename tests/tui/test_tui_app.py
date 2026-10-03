@@ -115,3 +115,25 @@ async def test_action_cancel_sets_flag(make_app):
         app.cancellation = Cancellation()
         app.action_cancel()
         assert app.cancellation.cancelled
+
+
+def test_git_branch_and_display_path(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from tribe.tui.app import _display_path, _git_branch
+
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/feature/x\n")
+    nested = tmp_path / "src" / "pkg"
+    nested.mkdir(parents=True)
+    assert _git_branch(nested) == "feature/x"
+    (tmp_path / ".git" / "HEAD").write_text("0123456789abcdef\n")
+    assert _git_branch(tmp_path) == "0123456"
+    (nested / ".git").write_text("gitdir: /somewhere/else\n")  # submodule/worktree
+    assert _git_branch(nested) == ""
+    assert _git_branch(Path("/")) == ""
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    assert _display_path(nested) == "~/src/pkg"
+    assert _display_path(Path("/elsewhere")) == "/elsewhere"
+    assert _display_path(Path(str(tmp_path) + "-sibling")) == str(tmp_path) + "-sibling"
