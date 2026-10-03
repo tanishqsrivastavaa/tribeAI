@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
+from textual.content import Content
 from textual.screen import ModalScreen
-from textual.widgets import Button, Collapsible, Input, OptionList, Static
+from textual.widgets import Input, OptionList, Static
 from textual.widgets.option_list import Option
 
 from ..sessions import SessionStore
 from ..sessions.messages import Role
+from .widgets import COMMANDS, _clip
 
 
 def _action_detail(tool: str, args: dict[str, Any]) -> str:
@@ -31,6 +34,18 @@ def _action_detail(tool: str, args: dict[str, Any]) -> str:
     return json.dumps(args, indent=2)
 
 
+def _choice(label: str, key: str) -> Option:
+    return Option(Content.assemble(label, (f"  {key}", "$text-muted")))
+
+
+def _ago(timestamp: float) -> str:
+    seconds = max(0, time.time() - timestamp)
+    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if seconds >= size:
+            return f"{int(seconds // size)}{unit} ago"
+    return "just now"
+
+
 class ApprovalModal(ModalScreen[dict]):
     BINDINGS = [
         ("y", "approve", "Approve"),
@@ -45,25 +60,23 @@ class ApprovalModal(ModalScreen[dict]):
         self.args = args or {}
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="approval-box"):
-            yield Static(f"Approve [b]{self.tool}[/b]?", id="approval-title")
+        with Vertical(id="approval-box", classes="dialog") as box:
+            box.border_title = f"Allow {self.tool}?"
             yield Static(_action_detail(self.tool, self.args), id="approval-action", markup=False)
-            with Collapsible(title="raw arguments", collapsed=True):
-                yield Static(json.dumps(self.args, indent=2), markup=False)
-            yield Button("Approve (y)", variant="success", id="approve")
-            yield Button("Deny (n)", variant="error", id="deny")
-            yield Button(f"Always allow {self.tool} (a)", id="always")
-            yield Static(
-                "y approve · n deny · a always allow · esc cancel", id="approval-keys"
+            yield OptionList(
+                _choice("Yes", "y"),
+                _choice(f"Yes, and always allow {self.tool} this session", "a"),
+                _choice("No", "n"),
+                id="approval-options",
             )
+            yield Static("↑/↓ to choose · enter to confirm · esc to deny", classes="dialog-keys")
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "approve":
-            self.action_approve()
-        elif event.button.id == "always":
-            self.action_always()
-        else:
-            self.action_deny()
+    def on_mount(self) -> None:
+        self.query_one(OptionList).focus()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        event.stop()
+        [self.action_approve, self.action_always, self.action_deny][event.option_index]()
 
     def action_approve(self) -> None:
         self.dismiss({"allowed": True, "remember": False})
@@ -108,9 +121,12 @@ class SessionsScreen(ModalScreen[str | None]):
         self.rows = session_rows(store)
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="login-box"):
-            yield Static("Sessions", id="login-title")
-            yield Static("type to filter · ↑/↓ to move · enter to open · esc to cancel", id="login-hint")
+        with Vertical(classes="dialog") as box:
+            box.border_title = "Sessions"
+            yield Static(
+                "type to filter · ↑/↓ to move · enter to open · esc to cancel",
+                classes="dialog-hint",
+            )
             yield Input(placeholder="filter…", id="session-filter")
             yield OptionList(id="sessions-list")
 
@@ -122,14 +138,18 @@ class SessionsScreen(ModalScreen[str | None]):
         query = query.lower()
         option_list = self.query_one(OptionList)
         option_list.clear_options()
-        for session_id, count, preview, _ in self.rows:
+        for session_id, count, preview, last_ts in self.rows:
             text = (preview or "(empty)").replace("\n", " ")
             if query and query not in text.lower() and query not in session_id.lower():
                 continue
-            marker = "•" if session_id == self.current_id else " "
-            option_list.add_option(
-                Option(f"{marker} {session_id[:8]}  {count:>3} msgs  {text[:48]}", id=session_id)
+            marker = ("● ", "$primary") if session_id == self.current_id else "  "
+            label = Content.assemble(
+                marker,
+                (f"{_clip(text, 34):<36}", "$foreground"),
+                (f"{count:>3} msgs  {_ago(last_ts) if last_ts else '':>8}  ", "$text-muted"),
+                (session_id[:8], "$text-muted"),
             )
+            option_list.add_option(Option(label, id=session_id))
         if option_list.option_count:
             option_list.highlighted = 0
 
@@ -157,26 +177,33 @@ class SessionsScreen(ModalScreen[str | None]):
         self.dismiss(None)
 
 
-_HELP_TEXT = """\
-Commands
-  /login      choose a provider, enter an API key, pick a model
-  /model      switch the active model
-  /sessions   browse and resume past sessions (searchable)
-  /new        start a fresh session
-  /clear      clear the transcript view
-  /help       show this help
+KEYS = [
+    ("enter", "send the message (or run the highlighted /command)"),
+    ("shift+enter", "insert a newline (also ctrl+j)"),
+    ("↑ / ↓", "previous / next prompt from history"),
+    ("tab", "accept the highlighted /command"),
+    ("esc", "close the menu, or interrupt the current turn"),
+    ("ctrl+c", "interrupt the current turn"),
+    ("ctrl+p", "command palette (themes and more)"),
+    ("f1", "this help"),
+    ("ctrl+q", "quit"),
+]
 
-Keys
-  Enter         send the message
-  Shift+Enter   insert a newline (also Ctrl+J)
-  ↑ / ↓         previous / next prompt from history
-  Tab           accept the highlighted slash-command
-  Ctrl+C        interrupt the current turn (then edit & send to redirect)
-  F1            this help
-  Ctrl+Q        quit
 
-While the agent works you can keep typing — Enter queues a follow-up,
-Ctrl+C interrupts so you can redirect immediately."""
+def help_content() -> Content:
+    lines = [Content.styled("Commands", "bold $primary")]
+    lines += [Content.assemble((f"  {name:<14}", "bold"), (desc, "$text-muted")) for name, desc in COMMANDS]
+    lines += [Content(""), Content.styled("Keys", "bold $primary")]
+    lines += [Content.assemble((f"  {key:<14}", "bold"), (desc, "$text-muted")) for key, desc in KEYS]
+    lines += [
+        Content(""),
+        Content.styled(
+            "While the agent works you can keep typing — enter queues a follow-up,\n"
+            "esc interrupts so you can redirect immediately.",
+            "$text-muted",
+        ),
+    ]
+    return Content("\n").join(lines)
 
 
 class HelpScreen(ModalScreen[None]):
@@ -187,10 +214,10 @@ class HelpScreen(ModalScreen[None]):
     ]
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="login-box"):
-            yield Static("Tribe — help", id="login-title")
-            yield Static(_HELP_TEXT, id="help-body", markup=False)
-            yield Static("esc or q to close", id="login-hint")
+        with Vertical(classes="dialog") as box:
+            box.border_title = "Tribe · help"
+            yield Static(help_content(), id="help-body")
+            yield Static("esc or q to close", classes="dialog-keys")
 
     def action_close(self) -> None:
         self.dismiss(None)
