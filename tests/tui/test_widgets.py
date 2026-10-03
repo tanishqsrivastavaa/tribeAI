@@ -5,6 +5,8 @@ from textual.app import App, ComposeResult
 from textual.containers import VerticalScroll
 
 from tribe.tui.widgets import (
+    ActivityLine,
+    Banner,
     CommandMenu,
     StatusBar,
     ToolActivity,
@@ -24,6 +26,7 @@ def test_tool_summary_per_tool():
 def test_formatting_helpers():
     assert format_duration(0.012) == "12ms"
     assert format_duration(1.5) == "1.5s"
+    assert format_duration(125) == "2m 5s"
     assert format_bytes(512) == "512 B"
     assert format_bytes(2048) == "2.0 KB"
 
@@ -32,7 +35,9 @@ class _Host(App):
     def compose(self) -> ComposeResult:
         yield VerticalScroll(id="t")
         yield CommandMenu([("/login", "a"), ("/model", "b"), ("/sessions", "c")])
+        yield ActivityLine()
         yield StatusBar()
+        yield Banner("1.2.3")
 
 
 async def test_tool_activity_lifecycle():
@@ -51,6 +56,8 @@ async def test_tool_activity_lifecycle():
         await pilot.pause()
         assert tool.state == "ok" and tool.has_class("tool-ok")
         assert "a\nb\nc" in tool.text_value
+        assert "3 lines" in tool.text_value
+        assert "3 lines" in str(tool.title)
 
 
 async def test_tool_activity_error_auto_expands():
@@ -81,15 +88,61 @@ async def test_command_menu_filters_and_selects():
         assert not menu.active
         menu.update_query("hello")  # no leading slash
         await pilot.pause()
-        assert not menu.active
+        assert not menu.active and not menu.display
 
 
-async def test_status_bar_context_percent():
+async def test_command_menu_moves_and_wraps():
+    app = _Host()
+    async with app.run_test() as pilot:
+        menu = app.query_one(CommandMenu)
+        menu.update_query("/")
+        await pilot.pause()
+        assert menu.selected() == "/login"
+        menu.move(1)
+        assert menu.selected() == "/model"
+        menu.move(-2)
+        assert menu.selected() == "/sessions"
+
+
+async def test_status_bar_shows_location_session_and_context():
     app = _Host()
     async with app.run_test() as pilot:
         bar = app.query_one(StatusBar)
-        bar.set(state="working", model="m", est_tokens=300_000, context_limit=1_000_000)
+        bar.set(
+            workspace="~/proj",
+            branch="main",
+            session="abcdef123456",
+            est_tokens=300_000,
+            context_limit=1_000_000,
+        )
         await pilot.pause()
-        assert bar.state == "working"
         rendered = str(bar.render())
+        assert "~/proj" in rendered and "main" in rendered and "abcdef12" in rendered
         assert "ctx 30%" in rendered
+
+
+async def test_activity_line_spins_while_working_and_clears():
+    app = _Host()
+    async with app.run_test() as pilot:
+        activity = app.query_one(ActivityLine)
+        assert str(activity.render()).strip() == ""
+        activity.start("Running bash")
+        activity.set_hint("esc to interrupt")
+        await pilot.pause()
+        rendered = str(activity.render())
+        assert "Running bash" in rendered and "esc to interrupt" in rendered
+        activity.stop()
+        await pilot.pause()
+        assert "Running bash" not in str(activity.render())
+
+
+async def test_banner_renders_wordmark_version_and_rows():
+    from textual.content import Content
+
+    app = _Host()
+    async with app.run_test() as pilot:
+        banner = app.query_one(Banner)
+        banner.set_rows([("model", Content("m-1")), ("session", Content("abc"))])
+        await pilot.pause()
+        rendered = str(banner.render())
+        assert "v1.2.3" in rendered and "m-1" in rendered and "session" in rendered
