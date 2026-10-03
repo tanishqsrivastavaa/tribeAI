@@ -11,7 +11,7 @@ An experiment in building an agent runtime from small, understandable parts: exp
 
 <br/>
 
-<img src="docs/tribe-chat.png" alt="Tribe chat running in the terminal TUI" width="820"/>
+<img src="https://raw.githubusercontent.com/tanishqsrivastavaa/tribeAI/master/docs/tribe-chat.png" alt="Tribe chat running in the terminal TUI" width="820"/>
 
 <sub>`tribe chat` — the interactive terminal UI, talking to the agent over the Tribe harness.</sub>
 
@@ -24,13 +24,15 @@ The goal is not to ship another general-purpose assistant. The goal is to own th
 
 ## Install
 
-Tribe is a standalone CLI. Install it as an isolated tool with [uv](https://docs.astral.sh/uv/) so the `tribe` command lands on your `PATH` and works from any directory:
+Tribe is a standalone CLI, published on PyPI as `tribeai`. Install it as an isolated tool so the `tribe` command lands on your `PATH` and works from any directory:
 
 ```bash
-uv tool install git+https://github.com/tanishqsrivastavaa/tribeAI
-# or, from a local clone:
-uv tool install .
+uv tool install tribeai
+# or
+pipx install tribeai
 ```
+
+Requires Python 3.11+ (uv fetches a suitable Python for you if needed). To try it without installing, run `uvx --from tribeai tribe chat`.
 
 Then just run it — no `uv run` prefix needed:
 
@@ -38,7 +40,7 @@ Then just run it — no `uv run` prefix needed:
 tribe chat
 ```
 
-If your shell can't find `tribe` afterwards, put uv's tool bin directory on your `PATH` once with `uv tool update-shell`, then restart the shell. Upgrade later with `uv tool upgrade tribe`, or uninstall with `uv tool uninstall tribe`.
+If your shell can't find `tribe` afterwards, put uv's tool bin directory on your `PATH` once with `uv tool update-shell`, then restart the shell. Upgrade later with `uv tool upgrade tribeai`, or uninstall with `uv tool uninstall tribeai`.
 
 Running against a live model needs an API key for your provider — the default is Anthropic (`ANTHROPIC_API_KEY`). See [Model Providers](#model-providers).
 
