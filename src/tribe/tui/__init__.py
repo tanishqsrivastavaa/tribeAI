@@ -14,5 +14,6 @@ def run_tui(
     model_name: str = "",
     provider: Optional[str] = None,
     model: Optional[str] = None,
+    workspace: str = ".",
 ) -> None:
-    TribeApp(loop_factory, store, session_id, model_name, provider, model).run()
+    TribeApp(loop_factory, store, session_id, model_name, provider, model, workspace).run()
