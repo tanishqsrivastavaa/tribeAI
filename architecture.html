@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tribe · Codebase guide</title>
+  <style>
+    :root { color-scheme: dark; --bg:#111114; --panel:#19191e; --line:#303039; --ink:#eeeef2; --muted:#a3a3af; --purple:#b9a6ff; --cyan:#7ccfea; --green:#8bd3a3; }
+    * { box-sizing:border-box }
+    body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.55 system-ui,-apple-system,Segoe UI,sans-serif }
+    main { width:min(940px, calc(100% - 36px)); margin:50px auto 80px }
+    header { margin-bottom:38px }
+    .eyebrow { color:var(--cyan); font:600 12px/1.4 ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase }
+    h1 { margin:8px 0; font-size:clamp(2rem,6vw,3.5rem); letter-spacing:-.045em; line-height:1.05 }
+    h2 { font-size:1.35rem; letter-spacing:-.02em; margin:0 0 14px }
+    p { margin:0; color:var(--muted) }
+    section { margin:28px 0; padding:24px; border:1px solid var(--line); border-radius:14px; background:var(--panel) }
+    .modules { display:grid; grid-template-columns:repeat(auto-fit,minmax(235px,1fr)); gap:10px }
+    article { border:1px solid var(--line); border-radius:10px; padding:14px }
+    article h3 { margin:0 0 4px; font-size:1rem }
+    article p { font-size:.92rem }
+    a { color:var(--purple); text-decoration:none }
+    a:hover { text-decoration:underline }
+    .file { display:inline-block; margin-top:9px; font:12px/1.4 ui-monospace,monospace; overflow-wrap:anywhere }
+    .diagram { overflow-x:auto; padding:16px; border-radius:10px; background:#101014; border:1px solid var(--line) }
+    .diagram pre { margin:0; color:#d9d9e1; font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace }
+    ol { margin:0; padding-left:1.5rem }
+    li { padding:4px 0 8px 5px; color:var(--muted) }
+    li::marker { color:var(--cyan); font-weight:700 }
+    strong { color:var(--ink) }
+    .foot { font-size:.85rem }
+    @media(max-width:600px) { main { margin-top:30px } section { padding:18px } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Tribe · teammate guide</div>
+    <h1>One visible agent loop.</h1>
+    <p>Tribe is a small Python CLI that connects a model to workspace tools, with sessions and approvals around the loop.</p>
+  </header>
+
+  <section id="modules">
+    <h2>Main modules</h2>
+    <div class="modules">
+      <article><h3>CLI & wiring</h3><p>Parses run/chat/resume, resolves settings, and assembles the runtime.</p><a class="file" href="src/tribe/cli.py">src/tribe/cli.py</a></article>
+      <article><h3>Terminal UI</h3><p>Textual chat, transcript, commands, login, and interactive approvals.</p><a class="file" href="src/tribe/tui/app.py">src/tribe/tui/app.py</a></article>
+      <article><h3>Agent loop</h3><p>Records turns, asks the model, runs requested tools, and stops on limits or a final answer.</p><a class="file" href="src/tribe/agent/loop.py">src/tribe/agent/loop.py</a></article>
+      <article><h3>Sessions & messages</h3><p>Typed message events stored as append-only JSONL for each session.</p><a class="file" href="src/tribe/sessions/store.py">store.py</a> · <a class="file" href="src/tribe/sessions/messages.py">messages.py</a></article>
+      <article><h3>Context</h3><p>Selects usable history and compacts older turns when the context budget fills.</p><a class="file" href="src/tribe/context/builder.py">builder.py</a> · <a class="file" href="src/tribe/context/compaction.py">compaction.py</a></article>
+      <article><h3>Models</h3><p>Provider registry and adapters keep the loop independent of Anthropic or OpenAI-compatible APIs.</p><a class="file" href="src/tribe/models/registry.py">registry.py</a> · <a class="file" href="src/tribe/models/base.py">base.py</a></article>
+      <article><h3>Tools & workspace</h3><p>Validates tool inputs and provides read, grep, write, and bash capabilities scoped to a workspace.</p><a class="file" href="src/tribe/tools/">tools/</a> · <a class="file" href="src/tribe/workspace/__init__.py">workspace/</a></article>
+      <article><h3>Approval policy</h3><p>Reads/searches are allowed by default; writes and shell commands ask first.</p><a class="file" href="src/tribe/approvals/__init__.py">src/tribe/approvals/__init__.py</a></article>
+      <article><h3>Observability & limits</h3><p>Observers report activity; run limits bound rounds, tool time, failures, and cancellation.</p><a class="file" href="src/tribe/observability/">observability/</a> · <a class="file" href="src/tribe/agent/limits.py">limits.py</a></article>
+    </div>
+  </section>
+
+  <section id="architecture">
+    <h2>How the pieces connect</h2>
+    <div class="diagram"><pre>CLI ── builds ──► AgentLoop ◄── Observer (console / TUI)
+                     │
+          ┌──────────┼───────────┐
+          ▼          ▼           ▼
+     SessionStore  ContextBuilder  Model adapter
+          ▲                       │
+          │                  response / tool calls
+          │                       ▼
+          └──── tool result ◄─ ApprovalGate ─► Workspace tools
+                                      │             (read/grep/write/bash)
+                                      └── allow / ask / deny</pre></div>
+    <p class="foot" style="margin-top:12px">The session is the durable record; context is a bounded view of that record sent to the model.</p>
+  </section>
+
+  <section id="request-flow">
+    <h2>A request, end to end</h2>
+    <ol>
+      <li><strong>Entry:</strong> <a href="src/tribe/cli.py">CLI</a> resolves provider, model, workspace, and approvals; creates or resumes a session.</li>
+      <li><strong>Record:</strong> <a href="src/tribe/agent/loop.py">AgentLoop</a> appends the user message through <a href="src/tribe/sessions/store.py">SessionStore</a>.</li>
+      <li><strong>Prepare:</strong> <a href="src/tribe/context/builder.py">ContextBuilder</a> selects history; <a href="src/tribe/context/compaction.py">compaction</a> summarizes older turns if needed.</li>
+      <li><strong>Ask:</strong> The provider adapter sends system instructions, history, and tool specs to the model.</li>
+      <li><strong>Act or answer:</strong> A final response is saved and displayed. For tool calls, the gate checks policy, then a validated tool runs within the workspace.</li>
+      <li><strong>Repeat:</strong> Tool results are appended to the session and fed into the next model round until a final answer, cancellation, or run limit.</li>
+    </ol>
+  </section>
+  <p class="foot">Start with <a href="README.md">README.md</a>, then follow the links above into <code>src/tribe</code>.</p>
+</main>
+</body>
+</html>
