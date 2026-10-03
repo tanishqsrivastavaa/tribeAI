@@ -117,12 +117,17 @@ async def test_startup_without_credentials_prompts_login(tmp_path, helpers):
     assert any("/login" in line for line in lines)
 
 
-async def test_subtitle_shows_not_logged_in_when_no_loop(tmp_path):
+async def test_chrome_shows_not_logged_in_when_no_loop(tmp_path):
+    from tribe.tui.widgets import Banner, StatusBar
+
     def raising_factory(observer, asker, provider=None, model=None):
         raise RuntimeError("no key")
 
     store = SessionStore(tmp_path / ".tribe" / "sessions")
     session_id = store.create()
     app = TribeApp(raising_factory, store, session_id)
-    async with app.run_test():
-        assert "not logged in" in app.sub_title
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert "ctx" not in str(app.query_one(StatusBar).render())
+        assert "not logged in" in str(app.query_one("#composer-box").border_subtitle)
+        assert "/login" in str(app.query_one(Banner).render())
