@@ -16,7 +16,13 @@ class Composer(TextArea):
             self.value = value
 
     def __init__(self, **kwargs) -> None:
-        super().__init__(soft_wrap=True, tab_behavior="indent", **kwargs)
+        super().__init__(
+            soft_wrap=True,
+            tab_behavior="indent",
+            highlight_cursor_line=False,
+            placeholder="Ask anything · / for commands",
+            **kwargs,
+        )
         self.show_line_numbers = False
         self._history: list[str] = []
         self._hpos: int | None = None
@@ -49,6 +55,8 @@ class Composer(TextArea):
         if event.key == "enter":
             event.prevent_default()
             event.stop()
+            if menu is not None and menu.active:
+                self._replace_all(menu.selected() or self.text)
             self._submit()
             return
         if event.key in ("shift+enter", "alt+enter", "ctrl+j"):
@@ -56,10 +64,13 @@ class Composer(TextArea):
             event.stop()
             self.insert("\n")
             return
-        if event.key == "escape" and menu is not None and menu.active:
+        if event.key == "escape":
             event.prevent_default()
             event.stop()
-            menu.update_query("")
+            if menu is not None and menu.active:
+                menu.update_query("")
+            else:
+                await self.run_action("app.cancel")
             return
         if event.key == "tab" and menu is not None and menu.active:
             event.prevent_default()
