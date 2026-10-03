@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+import tomllib
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Callable, Optional
@@ -95,6 +96,12 @@ def _git_branch(path: Path) -> str:
 
 
 def _version() -> str:
+    metadata = Path(__file__).resolve().parents[3] / "pyproject.toml"
+    try:
+        with metadata.open("rb") as file:
+            return str(tomllib.load(file)["project"]["version"])
+    except (OSError, KeyError, tomllib.TOMLDecodeError):
+        pass
     try:
         return version("tribeai")
     except PackageNotFoundError:
