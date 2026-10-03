@@ -4,6 +4,7 @@ import os
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
+from textual.content import Content
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label, OptionList, Static
 from textual.widgets.option_list import Option
@@ -17,15 +18,19 @@ class ProviderSelectScreen(ModalScreen[str | None]):
     BINDINGS = [("escape", "cancel", "Cancel")]
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="login-box"):
-            yield Static("Select a model provider", id="login-title")
-            yield Static("↑/↓ to move, enter to select, esc to cancel", id="login-hint")
+        with Vertical(classes="dialog") as box:
+            box.border_title = "Select a model provider"
+            yield Static("↑/↓ to move · enter to select · esc to cancel", classes="dialog-hint")
             options = []
             for name in sorted(PROVIDERS):
                 provider = PROVIDERS[name]
                 configured = provider.api_key_env and os.environ.get(provider.api_key_env)
-                marker = "✓" if configured else " "
-                options.append(Option(f"{marker} {name}  ({provider.api_key_env})", id=name))
+                label = Content.assemble(
+                    ("✓ " if configured else "  ", "$success"),
+                    (f"{name:<14}", "bold"),
+                    (provider.api_key_env or "", "$text-muted"),
+                )
+                options.append(Option(label, id=name))
             yield OptionList(*options, id="provider-list")
 
     def on_mount(self) -> None:
@@ -51,12 +56,12 @@ class ApiKeyScreen(ModalScreen[str | None]):
         self.existing = bool(self.env_var and os.environ.get(self.env_var))
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="login-box"):
-            yield Static(f"Enter your {self.provider} API key", id="login-title")
-            hint = f"Kept in ${self.env_var} for this session only."
+        with Vertical(classes="dialog") as box:
+            box.border_title = f"{self.provider} API key"
+            hint = f"Saved for future sessions and exported as ${self.env_var}."
             if self.existing:
                 hint += " A key is already set — leave blank to keep it."
-            yield Static(hint, id="login-hint")
+            yield Static(hint, classes="dialog-hint", markup=False)
             yield Input(placeholder=self.env_var, password=True, id="key-input")
             yield Label("", id="login-error")
 
@@ -87,9 +92,13 @@ class ModelSelectScreen(ModalScreen[str | None]):
         self.initial = current or self.default_model
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="login-box"):
-            yield Static(f"Choose a model for {self.provider}", id="login-title")
-            yield Static(f"Default: {self.default_model}", id="login-hint")
+        with Vertical(classes="dialog") as box:
+            box.border_title = f"Model for {self.provider}"
+            yield Static(
+                f"default: {self.default_model} · enter to confirm · esc to cancel",
+                classes="dialog-hint",
+                markup=False,
+            )
             yield Input(value=self.initial, id="model-input")
 
     def on_mount(self) -> None:
