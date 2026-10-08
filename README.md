@@ -11,7 +11,7 @@ An experiment in building an agent runtime from small, understandable parts: exp
 
 <br/>
 
-<img src="https://raw.githubusercontent.com/tanishqsrivastavaa/tribeAI/master/docs/tribe-chat.png" alt="Tribe chat running in the terminal TUI" width="820"/>
+![Current Tribe terminal UI](docs/tribe-chat.png)
 
 <sub>`tribe chat` — the interactive terminal UI, talking to the agent over the Tribe harness.</sub>
 
